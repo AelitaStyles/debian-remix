@@ -4,7 +4,7 @@
 source ./config.sh
 
 echo "> Installing Prerequisites... "
-sudo apt-get -y install debootstrap squashfs-tools xorriso
+sudo apt-get -y install debootstrap squashfs-tools grub-pc-bin grub-efi-amd64-bin grub-efi-ia32-bin xorriso mtools
 if [ $? -ne 0 ]; then
 	echo "> failed."
 	exit 1
@@ -13,8 +13,17 @@ else
 fi
 
 echo "> Removing Old Build... "
-rm -vrf ./build > /dev/null
+rm -vrf ./build
 echo "> ok."
+
+echo "> Creating build directory... "
+mkdir -vp ./build/root 
+if [ $? -ne 0 ]; then
+	echo "> failed."
+	exit 1
+else
+	echo "> ok."
+fi
 
 echo "> Installing Debian... "
 debootstrap --arch="$TARGET_ARCH" "$BASE_DIST" ./build/root
@@ -26,7 +35,7 @@ else
 fi
 
 echo "> Copying chroot.sh and the setup directory... "
-cp -v ./utils/chroot.sh ./build/root/chroot.sh "$TARGET_ARCH"
+cp -v ./utils/chroot.sh ./build/root/chroot.sh
 if [ $? -ne 0 ]; then
 	echo "> failed."
 	exit 1
@@ -40,7 +49,7 @@ else
 fi
 
 echo "> Chroot into LiveCD... "
-chroot ./build/root /chroot.sh
+chroot ./build/root /chroot.sh "$TARGET_ARCH"
 if [ $? -ne 0 ]; then
 	echo "> failed."
 	exit 1
@@ -48,13 +57,13 @@ else
 	echo "> ok."
 fi
 
-echo "> Creating LiveCD and ISOLinux directories..."
-mkdir -vp ./build/binary/live
+echo "> Removing setup files..."
+rm -vf ./build/root/chroot.sh
 if [ $? -ne 0 ]; then
 	echo "> failed."
 	exit 1
 fi
-mkdir -vp ./build/binary/isolinux
+rm -rvf ./build/root/setup
 if [ $? -ne 0 ]; then
 	echo "> failed."
 	exit 1
@@ -62,13 +71,32 @@ else
 	echo "> ok."
 fi
 
-echo "> Copying kernel and initrd... "
-cp -v ./build/root/boot/vmlinuz-* ./build/binary/live/vmlinuz
+echo "> Creating LiveCD directories..."
+mkdir -vp ./build/cd/boot/grub
 if [ $? -ne 0 ]; then
 	echo "> failed."
 	exit 1
 fi
-cp -v ./build/root/boot/initrd.img-* ./build/binary/live/initrd
+mkdir -vp ./build/cd/live
+if [ $? -ne 0 ]; then
+	echo "> failed."
+	exit 1
+else
+	echo "> ok."
+fi
+
+echo "> Copying kernel, initrd and grub.cfg... "
+cp -v ./build/root/boot/vmlinuz-* ./build/cd/live/vmlinuz
+if [ $? -ne 0 ]; then
+	echo "> failed."
+	exit 1
+fi
+cp -v ./build/root/boot/initrd.img-* ./build/cd/live/initrd
+if [ $? -ne 0 ]; then
+	echo "> failed."
+	exit 1
+fi
+cp -v ./grub.cfg ./build/cd/boot/grub/grub.cfg
 if [ $? -ne 0 ]; then
 	echo "> failed."
 	exit 1
@@ -77,26 +105,7 @@ else
 fi
 
 echo "> Squashing filesystem..."
-mksquashfs ./build/root ./build/binary/live/filesystem.squashfs -comp xz -e boot
-if [ $? -ne 0 ]; then
-	echo "> failed."
-	exit 1
-else
-	echo "> ok."
-fi
-
-echo "> Copying ISOLinux files..."
-cp -v /usr/lib/syslinux/isolinux.bin ./build/binary/isoliinux/.
-if [ $? -ne 0 ]; then
-	echo "> failed."
-	exit 1
-fi
-cp -v /usr/lib/syslinux/menu.c32 ./build/binary/isolinux/.
-if [ $? -ne 0 ]; then
-	echo "> failed."
-	exit 1
-fi
-cp -v ./isolinux.cfg ./build/binary/isolinux/.
+mksquashfs ./build/root ./build/cd/live/filesystem.squashfs -comp xz -e boot
 if [ $? -ne 0 ]; then
 	echo "> failed."
 	exit 1
@@ -105,4 +114,10 @@ else
 fi
 
 echo "> Building ISO..."
-xorriso -as mkisofs -r -J -joliet-long -l -cache-inodes -isohybrid-mbr /usr/lib/syslinux/isohdpfx.bin -partition_offset 16 -A "$CD_LABEL" -b isolinux/isolinux.bin -c isolinux/boot.cat -no-emul-boot -boot-load-size 4 -boot-info-table -o ./build/build.iso ./build/binary
+grub-mkrescue -o ./build/build.iso ./build/cd
+if [ $? -ne 0 ]; then
+	echo "> failed."
+	exit 1
+else
+	echo "> ok."
+fi
